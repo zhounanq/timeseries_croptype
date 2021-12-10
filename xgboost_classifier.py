@@ -40,18 +40,19 @@ def load_csvdata_pandas(datafile):
     :return:
     """
     csv_data = pd.read_csv(datafile, header=0, encoding="gbk")
-    csv_data = csv_data.iloc[:, 2:]
+    csv_data = csv_data.iloc[:, 3:]
 
     segment = csv_data.iloc[:, :-1].to_numpy()
     label = csv_data.iloc[:, -1].to_numpy()
+    field = csv_data.columns.values
 
     print(np.shape(segment), np.shape(label))
     print("Numbers of category：", collections.Counter(label))
-    return segment, label
+    return segment, label, field
 
 
 def train_model(train_x, train_y):
-
+    print("### Model training")
     # 拆分为训练集和验证集
     train_x, valid_x, train_y, valid_y = train_test_split(train_x, train_y, test_size=0.2, random_state=100)
 
@@ -64,12 +65,13 @@ def train_model(train_x, train_y):
         learning_rate=0.3,      # 学习率
         n_estimators=100,       # 树的个数
 
-        # objective = 'multi:softmax', # 多分类问题，指定学习任务和响应的学习目标
+        objective = 'multi:softmax', # 多分类问题，指定学习任务和响应的学习目标
         # reg:linear–线性回归；
         # reg:logistic–逻辑回归；
         # binary:logistic –二分类的逻辑回归问题，输出为概率；
         # multi:softmax –让XGBoost采用softmax目标函数处理多分类问题，同时需要设置参数num_class（类别个数）
-        # num_class = 10,       # 类别数，多分类与multisoftmax并用
+        num_class = 9,          # 类别数，多分类与multisoftmax并用
+        eval_metric='mlogloss', # 评估指标，可以传递各种评估方法组成的list；rmse回归任务、mlogloss多分类任务、error二分类任务、auc二分类任务
         booster='gbtree',       # 指定弱学习器的类型，默认值为gbtree使用基于树的模型进行计算。可选gblinear线性模型作为弱学习器。
 
         gamma=0,                # 树的叶子节点上做进一步分区所需的最小损失减少，越大越保守，一般0.1 0.2这样子
@@ -86,8 +88,6 @@ def train_model(train_x, train_y):
 
         # scale_pos_weight =1 # 如果取值大于0的话，在类别样本不平衡的情况下有助于快速收敛，平衡正负权重
 
-        # eval_metric='mlogloss', # 评估指标，可以传递各种评估方法组成的list；rmse回归任务、mlogloss多分类任务、error二分类任务、auc二分类任务
-
         silent=0,               # 设置成1则没有运行信息输出，最好是设置为0，是否在运行升级时打印消息
         # nthread=4             # CPU 线程数默认最大
         seed = 1000             # 随机种子
@@ -96,6 +96,8 @@ def train_model(train_x, train_y):
     # print("### Training accuracy %g" % xgb.oob_score_)
 
     # 分类精度
+    overall_accuracy = xgb.score(train_x, train_y)
+    print("### Training accuracy %g" % overall_accuracy)
     overall_accuracy = xgb.score(valid_x, valid_y)
     print("### Validation accuracy %g" % overall_accuracy)
 
@@ -107,7 +109,7 @@ def train_model(train_x, train_y):
 
 
 def model_predict(model, test_x):
-
+    print("### Model Predicting")
     # 测试分析
     test_y = model.predict(test_x)
     print("Numbers of category：", collections.Counter(test_y))
@@ -116,11 +118,20 @@ def model_predict(model, test_x):
     return test_y
 
 
+def merge_prediction(templete_file, result_file, merge_file):
+
+    templete_pd = pd.read_csv(templete_file, header=0, encoding="gbk")
+    result_pd = pd.read_csv(result_file, header=0, encoding="gbk")
+
+    merge_pd = pd.concat([templete_pd, result_pd], axis=1, ignore_index=False)
+    merge_pd.to_csv(merge_file, sep=',')
+
+
 def main():
-    print("### xgboost classifier main() ###########################################")
+    print("### RF classifier ###########################################")
     # 读取训练数据
-    train_data = 'J:/FF/application_dataset/chongqing_agir/sample/attri12.csv'
-    train_x, train_y = load_csvdata_pandas(train_data)
+    train_data = 'I:/FF/application_dataset/chongqing_agir/MODIS2021/att_sample_result/sample/sample_att.csv'
+    train_x, train_y, field = load_csvdata_pandas(train_data)
 
     # 数据标准化 & 训练模型 (本案例中不需要标准化，外部已经标准化过)
     # data_scaler = StandardScaler()
@@ -128,15 +139,25 @@ def main():
 
     xgb_model = train_model(train_x, train_y)
 
+    # 模型保存与载入
+    # joblib.dump(xgb_model, 'saveModel/model.m')
+    # xgb_model = joblib.load('saveModel/model.m')
+
     # 模型预测
-    test_data = 'G:/common-dataset/Sentinel-1/weining-crop/plots/2/03/wndikuai2-test.csv'
-    test_result = 'G:/common-dataset/Sentinel-1/weining-crop/plots/2/03/wndikuai2-result.csv'
-    test_x, _ = load_csvdata_pandas(test_data)
+    test_data = 'I:/FF/application_dataset/chongqing_agir/MODIS2021/att_sample_result/att.csv'
+    test_result = 'I:/FF/application_dataset/chongqing_agir/MODIS2021/att_sample_result/att_result.csv'
+    test_x, _, _ = load_csvdata_pandas(test_data)
 
     # test_x = data_scaler.transform(test_x)
     test_y = model_predict(xgb_model, test_x)
+    np.savetxt(test_result, test_y.astype(int), delimiter=',')
 
-    np.savetxt(test_result, test_y, delimiter=',')
+    # 合并结果
+    result_file = test_result
+    templete_file = 'I:/FF/application_dataset/chongqing_agir/MODIS2021/att_sample_result/att_result_templete.csv'
+    merge_file = 'I:/FF/application_dataset/chongqing_agir/MODIS2021/att_sample_result/att_result_merge.csv'
+    merge_prediction(templete_file, result_file, merge_file)
+
     print("### Task over ###########################################")
 
 
