@@ -146,6 +146,22 @@ def model_predict(model, test_x):
     return test_y
 
 
+def model_predict_proba(model, test_x, threshold=None):
+    print("### Model Predicting Proba")
+    # 测试分析
+    test_proba = model.predict_proba(test_x)
+
+    if threshold:
+        assert (test_proba.shape[1] == len(threshold))
+        test_y = np.copy(test_proba)
+        test_y[test_y < threshold] = 0
+        test_y = np.argmax(test_y, axis=1)
+        test_y = model.classes_[test_y]
+
+    print("RF predicting Over!!!")
+    return test_proba, test_y
+
+
 def merge_prediction(templete_file, result_file, merge_file):
 
     templete_pd = pd.read_csv(templete_file, header=0, encoding="gbk")
